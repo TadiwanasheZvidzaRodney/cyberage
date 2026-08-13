@@ -1,0 +1,75 @@
+generator client {
+  provider             = "prisma-client-py"
+  recursive_type_depth = 5
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Engagement {
+  id                    String        @id @default(uuid())
+  clientName            String
+  authorizationDocHash  String
+  startTime             DateTime
+  endTime               DateTime
+  maxRiskLevel          String        @default("LOW")
+  createdAt             DateTime      @default(now())
+
+  decisions             DecisionLog[]
+  findings              Finding[]
+  evidence              Evidence[]
+}
+
+model DecisionLog {
+  id               String          @id @default(uuid())
+  engagementId     String
+  timestamp        DateTime        @default(now())
+  agentRole        String
+  
+  observation      String
+  hypothesis       String
+  proposedAction   String
+  actionParams     String
+  
+  policyCheck      String
+  riskAssessment   String
+  approvalStatus   String          @default("APPROVED")
+  
+  executionResult  String?
+  
+  engagement       Engagement      @relation(fields: [engagementId], references: [id])
+  evidence         Evidence[]
+}
+
+model Evidence {
+  id             String       @id @default(uuid())
+  engagementId   String
+  decisionLogId  String
+  timestamp      DateTime     @default(now())
+  
+  artifactType   String
+  contentHash    String
+  storagePath    String
+  metadata       String
+  
+  engagement     Engagement   @relation(fields: [engagementId], references: [id])
+  decisionLog    DecisionLog  @relation(fields: [decisionLogId], references: [id])
+  findings       Finding[]
+}
+
+model Finding {
+  id             String       @id @default(uuid())
+  engagementId   String
+  title          String
+  severity       String
+  affectedAsset  String
+  description    String
+  remediation    String
+  confidence     Float
+  createdAt      DateTime     @default(now())
+
+  engagement     Engagement   @relation(fields: [engagementId], references: [id])
+  evidence       Evidence[]
+}

@@ -1,0 +1,258 @@
+# CyberAge — Document Analysis & Understanding
+
+## What CyberAge Is
+
+CyberAge is an **Auditable Autonomous Security-Testing Platform** — an AI-driven penetration testing system where an LLM acts as an "intelligent analyst" operating within strict, deterministic guardrails. It is **not** an "AI hacker with a terminal"; instead, the AI decides *what* to do, while the system controls *whether* it's allowed and *how* it executes safely.
+
+---
+
+## Document Inventory
+
+| Document | Purpose | Key Focus |
+|---|---|---|
+| [CyberAge.md](file:///c:/Users/tadiwanashe.zvidza/Documents/cyberage/Docs/CyberAge.md) | **Core Architecture** — data models, policy engine, approval tiers, traceability, reporting pipeline | Prisma/PostgreSQL schemas, Policy Engine flow, Human-in-the-Loop matrix, Replayability chain, Report Generator |
+| [CYBERAGE_NT.md](file:///c:/Users/tadiwanashe.zvidza/Documents/cyberage/Docs/CYBERAGE_NT.md) | **V1 Blueprint** — a constrained first version proving the architecture end-to-end | DB schema (raw SQL-style), Agent State Machine, Tool Interface (JSON schema), Policy Engine pseudocode |
+| [Engineering_Playbook.md](file:///c:/Users/tadiwanashe.zvidza/Documents/cyberage/Docs/Engineering_Playbook.md) | **Engineering Execution Plan** — stack choices, dev workflow, iteration strategy | Stack selection, vertical-slice development, modularity principles |
+| [The_Master_Blueprint_V1_Architecture.md](file:///c:/Users/tadiwanashe.zvidza/Documents/cyberage/Docs/The_Master_Blueprint_V1_Architecture.md) | **Master V1 Synthesis** — combines all concepts into a unified architecture with multi-agent orchestration and attack graph | 3-Tier logging, Policy Engine as middleware, Containerized tools, Multi-agent PTES loop, Attack Graph |
+
+---
+
+## Architecture at a Glance
+
+```mermaid
+graph TB
+    subgraph Frontend["Frontend (React + Vite + TypeScript)"]
+        Dashboard["Audit Dashboard"]
+        AttackGraph["Attack Graph Visualizer"]
+    end
+
+    subgraph Backend["Backend (FastAPI / Python)"]
+        Orchestrator["LLM Orchestrator"]
+        PolicyEngine["Policy Enforcement Engine"]
+        ToolManager["Tool Manager"]
+        ReportGen["Report Generator"]
+    end
+
+    subgraph Data["Data Layer (PostgreSQL + Prisma)"]
+        Engagement["Engagement / RoE"]
+        Scope["Scope Rules"]
+        DecisionLog["Decision Log"]
+        Evidence["Evidence Store"]
+        Findings["Findings"]
+    end
+
+    subgraph Execution["Isolated Execution (Docker)"]
+        Nmap["nmap container"]
+        Nuclei["nuclei container"]
+        FFUF["ffuf container"]
+    end
+
+    Orchestrator -->|"Proposed Action (JSON)"| PolicyEngine
+    PolicyEngine -->|"Scope/Time/Technique Check"| Data
+    PolicyEngine -->|"Approved"| ToolManager
+    PolicyEngine -->|"Denied / Pending Human"| Orchestrator
+    ToolManager --> Execution
+    Execution -->|"Raw Output"| Evidence
+    Evidence --> ReportGen
+    ReportGen --> Dashboard
+    DecisionLog --> AttackGraph
+```
+
+---
+
+## Key Architectural Principles
+
+### 1. Governance-First Design
+The entire platform is built around the idea that the AI is **never trusted with direct execution**. A deterministic **Policy Enforcement Engine** sits between the AI's decision-making and all tool execution. This engine checks:
+
+| Check | Source | Failure Action |
+|---|---|---|
+| **Time Window** | `Engagement.startTime / endTime` | REJECT — engagement inactive |
+| **Target Scope** | `Scope.allowedTargets / excludedTargets` | REJECT — out of scope |
+| **Technique Restrictions** | `PolicyRule.prohibitedTechniques` | REJECT — prohibited action |
+| **Risk Threshold** | `RiskLevel` vs. engagement `maxRiskLevel` | HOLD — route to human approval |
+
+### 2. Immutable Audit Trail (3-Tier Logging)
+Every action produces an immutable `DecisionLog` entry containing:
+- **Observation** — what was seen
+- **Hypothesis** — what the agent thinks
+- **Proposed Action** — the tool/command requested
+- **Policy Decision** — approved/denied/pending human
+- **Execution Result** — success/failure
+- **Evidence Link** — SHA-256 hashed artifact for chain-of-custody
+
+The three tiers are:
+- **Tier 1 (Machine Log):** Raw JSON of API calls, parameters, stdout/stderr
+- **Tier 2 (Reasoning Log):** The AI's hypothesis, action selection, and RoE check
+- **Tier 3 (Human Report):** PTES-mapped findings with CVSS scores and remediation
+
+### 3. Agent State Machine
+The AI follows a **linear state machine** per action cycle:
+
+```
+OBSERVE → HYPOTHESIZE → PROPOSE_ACTION → [POLICY_CHECK] → EXECUTE → ANALYZE_EVIDENCE → Loop
+```
+
+> [!IMPORTANT]
+> The `POLICY_EVALUATION_STATE` and `EXECUTE_STATE` are **system-controlled**, not AI-controlled. The AI never has direct access to tools.
+
+### 4. Human-in-the-Loop Approval Tiers
+
+| Tier | Category | Examples | Approval |
+|---|---|---|---|
+| **Tier 1** | Passive & Read-Only | DNS lookup, header inspection, tech detection | Automatic |
+| **Tier 2** | Active Verification | Authenticated session checks, parameter inspection | Auto if in-scope; flagged if rate spikes |
+| **Tier 3** | State-Changing / Disruptive | Modify app state, excessive traffic, persistent data changes | **Mandatory human sign-off** |
+
+### 5. Isolated Tool Execution
+- Tools run in **ephemeral Docker containers** (nmap, nuclei, ffuf, etc.)
+- The AI sends **typed JSON payloads** to API endpoints (e.g., `/api/tools/network/port-scan`)
+- No raw shell access ever
+
+### 6. Multi-Agent Orchestration (PTES Framework)
+Five specialized sub-agents, coordinated by a central Orchestrator:
+
+| Agent | Role |
+|---|---|
+| **Recon Agent** | Maps external perimeter (DNS, subdomains) |
+| **Assessment Agent** | Formulates hypotheses from recon findings |
+| **Validation Agent** | Requests safe, non-destructive checks via Policy Engine |
+| **Evidence Agent** | Parses outputs, calculates hashes, writes to Machine Log |
+| **Reporting Agent** | Compiles timeline linking findings → observations → RoE authorization |
+
+### 7. Attack Graph (The Differentiator)
+Instead of a flat vulnerability list, the system models the environment as a **directed graph**:
+- Nodes = assets (servers, databases, services)
+- Edges = discovered access paths (open ports, leaked credentials, etc.)
+- Auditors can click any node to **visually trace** the chronological sequence of hypotheses, approvals, and tool executions
+
+---
+
+## Technology Stack
+
+| Layer | Technology | Rationale |
+|---|---|---|
+| **Frontend** | React + Vite + TypeScript | Developer velocity, strong typing, modern UI |
+| **Backend** | FastAPI (Python) | Async LLM calls, API routing, middleware for policy checks |
+| **Database** | PostgreSQL + Prisma | Typed ORM, complex relational data, audit logs, migration management |
+| **Tool Execution** | Docker containers | Isolation, ephemeral environments, scalable to ECS/EKS |
+| **Storage** | Object Storage (S3 or equivalent) | Evidence artifacts with SHA-256 integrity hashes |
+| **Design** | Black/white/grey palette, minimal SVG components | Professional, lightweight |
+
+---
+
+## Database Schema Summary
+
+```mermaid
+erDiagram
+    Engagement ||--o{ Scope : defines
+    Engagement ||--o{ PolicyRule : governs
+    Engagement ||--o{ DecisionLog : produces
+    Engagement ||--o{ Finding : discovers
+    Engagement ||--o{ Evidence : collects
+
+    DecisionLog ||--o{ Evidence : generates
+    Evidence ||--o{ Finding : supports
+
+    Engagement {
+        uuid id PK
+        string clientName
+        string authorizationDocHash
+        datetime startTime
+        datetime endTime
+        stringArr allowedTargets
+        stringArr excludedTargets
+        intArr allowedPorts
+        stringArr prohibitedTechniques
+        enum maxRiskLevel
+    }
+
+    DecisionLog {
+        uuid id PK
+        uuid engagementId FK
+        datetime timestamp
+        string agentRole
+        text observation
+        text hypothesis
+        string proposedAction
+        json actionParams
+        enum policyCheck
+        enum riskAssessment
+        enum approvalStatus
+        string executionResult
+    }
+
+    Evidence {
+        uuid id PK
+        uuid engagementId FK
+        uuid decisionLogId FK
+        string artifactType
+        string contentHash
+        string storagePath
+        json metadata
+    }
+
+    Finding {
+        uuid id PK
+        uuid engagementId FK
+        string title
+        enum severity
+        string affectedAsset
+        text description
+        text remediation
+        float confidence
+    }
+```
+
+---
+
+## V1 Scope — The Vertical Slice
+
+The V1 deliverable is deliberately constrained to prove the architecture works end-to-end:
+
+1. **Capability:** Passive DNS Enumeration only
+2. **Database:** Seeded `Engagement` allowing DNS enumeration for a specific test domain
+3. **Policy Engine:** FastAPI middleware checking target domain against the database
+4. **Execution:** Docker container runs DNS enumeration script, saves output to `Evidence`
+5. **Dashboard:** React frontend displaying the `DecisionLog` chain: Observation → Hypothesis → Execution → Evidence
+
+> [!TIP]
+> The V1 slice is intentionally minimal. Once this works, adding new tools is additive: write a JSON schema, build a Docker container, register in the Tool Manager — no AI code changes needed.
+
+---
+
+## Iteration Model
+
+The modular architecture makes extending trivial:
+
+| Change | What to Touch | What's Untouched |
+|---|---|---|
+| **Add a new tool** | JSON schema + Docker container + Tool Manager registration | AI, Database, Policy Engine |
+| **Upgrade the AI** | LLM service layer (swap API calls) | Database, Tools, Policy |
+| **Update rules** | Prisma schema + migration | AI, Tools, Frontend |
+
+---
+
+## Reporting Pipeline
+
+```
+PostgreSQL + Object Storage
+        ↓
+  Report Generator
+   ├── Aggregate Metadata (scope, duration, timeline)
+   ├── Map Findings → Risk Matrix (CVSS / severity)
+   ├── Attach Verified Evidence Hashes & Screenshots
+   └── Generate Decision & Governance Audit Appendix
+        ↓
+  ┌──────────────┐     ┌──────────────────────┐
+  │  Executive   │     │  Technical & Audit    │
+  │  Summary     │     │  Appendix             │
+  │  (PDF/Web)   │     │  (Markdown/JSON)      │
+  └──────────────┘     └──────────────────────┘
+```
+
+### Report Sections
+- **Scope & Governance Summary:** Authorization docs, target CIDRs, time windows
+- **Executive Finding Matrix:** Prioritized by severity, business impact, remediation complexity
+- **Detailed Findings & Cryptographic Evidence:** Technical descriptions + immutable content hashes
+- **Complete Activity Log:** Append-only timeline of every observation, hypothesis, policy check, and action
