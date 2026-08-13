@@ -1,0 +1,3 @@
+FROM projectdiscovery/nuclei:latest
+# Run nuclei silently, updating templates on the fly, outputting in simple format
+ENTRYPOINT ["nuclei", "-silent", "-u"]

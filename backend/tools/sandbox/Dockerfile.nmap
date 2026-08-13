@@ -1,0 +1,4 @@
+FROM alpine:latest
+RUN apk add --no-cache nmap
+# Fast scan by default, don't ping host
+ENTRYPOINT ["nmap", "-Pn", "-F"]
